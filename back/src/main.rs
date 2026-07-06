@@ -37,14 +37,6 @@ async fn main() {
         )
         .init();
 
-    // Création du state partagé
-    let definition = match Database::load("definition") {
-        Ok(database) => database,
-        Err(error) => {
-            tracing::error!(cauded = %error, "Création de la base de données 'definition'.");
-            return;
-        }
-    };
     let paystub = match Database::load("paystub") {
         Ok(database) => database,
         Err(error) => {
@@ -54,7 +46,6 @@ async fn main() {
     };
     let state = AppState {
         claude: Arc::new(Claude),
-        definition: Arc::new(Mutex::new(definition)),
         paystub: Arc::new(Mutex::new(paystub)),
     };
 
@@ -64,7 +55,6 @@ async fn main() {
     // Création des routes
     let mut app = Router::new();
     app = register_status_routes(app);
-    app = register_definitions_routes(app);
     app = register_paystub_routes(app);
     let app = app.with_state(state).layer(CorsLayer::permissive());
 
@@ -92,7 +82,6 @@ async fn main() {
 #[derive(Clone)]
 pub struct AppState {
     pub claude: Arc<Claude>,
-    pub definition: Arc<Mutex<Database<String>>>,
     pub paystub: Arc<Mutex<Database<PaystubState>>>,
 }
 
@@ -243,26 +232,6 @@ pub async fn post_paystubs(
     Ok(Json(result))
 }
 
-// ======== definitions
-
-fn register_definitions_routes(router: Router<AppState>) -> Router<AppState> {
-    router.route("/api/definitions", get(get_definitions))
-}
-
-pub async fn get_definitions(
-    State(state): State<AppState>,
-) -> Result<Json<HashMap<String, String>>, (StatusCode, &'static str)> {
-    let definition = state.definition.lock().map_err(|error| {
-        let msg = "Verrouillage de la base de données.";
-        tracing::error!(cauded = %error, database = "definition",   msg);
-        (StatusCode::INTERNAL_SERVER_ERROR, msg)
-    })?;
-    let items = definition
-        .get_all()
-        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
-    Ok(Json(items))
-}
-
 // ========= Paystubs analyse
 
 const PAYSTUB_CRON_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
@@ -311,10 +280,6 @@ fn spawn_paystub_cron(state: AppState) {
 }
 
 async fn process_pending_paystubs(state: &AppState) -> Result<(), &'static str> {
-    // On ne garde le verrou que le temps de choisir une fiche en attente et de
-    // marquer son state à `Analyse` : le lock doit être relâché avant l'appel
-    // (potentiellement long) à `claude.prompt`, sous peine de bloquer les
-    // autres routes de l'API qui ont besoin de cette même base de données.
     let next = {
         let paystubs = state.paystub.lock().map_err(|error| {
             let msg = "Verrouillage de la base de données.";
