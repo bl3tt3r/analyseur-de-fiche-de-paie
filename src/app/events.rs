@@ -17,7 +17,16 @@ impl<E> Events<E> {
         self.queue.push_back(event);
     }
 
-    pub fn pop(&mut self) -> Option<E> {
-        self.queue.pop_front()
+    pub fn pop<T>(&mut self, f: impl Fn(&E) -> Option<T>) -> Option<T> {
+        let mut latest = None;
+        let mut remaining = VecDeque::with_capacity(self.queue.len());
+        for event in self.queue.drain(..) {
+            match f(&event) {
+                Some(value) => latest = Some(value),
+                None => remaining.push_back(event),
+            }
+        }
+        self.queue = remaining;
+        latest
     }
 }

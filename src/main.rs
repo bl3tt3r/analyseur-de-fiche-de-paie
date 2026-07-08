@@ -2,15 +2,15 @@ use crate::app::App;
 use eframe::egui;
 
 pub mod app;
+pub mod components;
 pub mod event;
-pub mod views;
 
 pub struct Wrapper {
     inner: App,
 }
 
 fn main() -> eframe::Result {
-    let app: App = App::load();
+    let mut app: App = App::load();
     eframe::run_native(
         app.name(),
         app.options(),

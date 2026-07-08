@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 bitcode = "0.6.9"
 eframe = { version = "0.35", features = ["default"] }
+egui-phosphor = { git = "https://github.com/crumblingstatue/egui-phosphor", branch = "egui-035" }
 egui_plot = "0.36.0"
 log = "0.4"
 redb = "4.1.0"

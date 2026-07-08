@@ -1,1 +1,4 @@
-pub enum Event {}
+pub enum Event {
+    ToggleSettingsWindow { opened: bool },
+    ImportPaystubs,
+}
