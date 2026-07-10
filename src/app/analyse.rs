@@ -129,8 +129,8 @@ impl Analyse {
                     let response_tx = response_tx.clone();
                     let ctx = ctx.clone();
                     tokio::task::spawn_blocking(move || {
-                        let result = analyse_paystub(&id, paystub);
-                        let _ = response_tx.send((id, result));
+                        let paystub = analyse_paystub(&id, paystub);
+                        let _ = response_tx.send((id, paystub));
                         ctx.request_repaint();
                     });
                 }
@@ -319,25 +319,59 @@ struct AnalysisOutcome {
     datas: HashMap<String, f32>,
 }
 
+/// Vérifie que Claude Code est prêt à être utilisé par l'application.
+///
+/// Cette méthode vérifie deux conditions nécessaires au fonctionnement :
+///
+/// - Claude Code doit être installé sur le système.
+/// - Claude Code doit être connecté à un compte utilisateur.
+///
+/// # Retour
+///
+/// Retourne :
+///
+/// - `Ok(())` si Claude Code est installé et correctement connecté.
+/// - `Err(&'static str)` contenant un message Markdown destiné à être affiché
+///   directement dans l'interface utilisateur si une condition n'est pas remplie.
+pub fn claude_code_ready() -> Result<(), &'static str> {
+    let claude = Claude;
+    if !claude.installed() {
+        return Err(r#"
+# Claude Code n'est pas installé
+
+Cette application nécessite **Claude Code** pour fonctionner.
+
+Pour installer Claude Code, consultez la
+[documentation officielle de Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started).
+"#);
+    }
+
+    if !claude.connected() {
+        return Err(r#"
+# Claude Code n'est pas connecté
+
+Cette application nécessite **Claude Code** pour fonctionner.
+
+Pour connecter Claude Code, consultez la
+[documentation officielle de Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started).
+"#);
+    }
+    Ok(())
+}
+
 struct Claude;
 
 #[derive(Deserialize, Debug)]
 struct ClaudeResponse {
-    pub r#type: String,
-    pub subtype: String,
     pub is_error: bool,
-    pub api_error_status: Option<String>,
+    pub api_error_status: Option<i32>,
     pub duration_ms: i32,
-    pub duration_api_ms: i32,
-    pub ttft_ms: i32,
-    pub ttft_stream_ms: i32,
-    pub time_to_request_ms: i32,
     pub num_turns: i32,
     pub result: String,
 }
 
 impl Claude {
-    /* pub fn installed(&self) -> bool {
+    pub fn installed(&self) -> bool {
         let (code, _stdout, _stderr) = exec(vec!["--version"]);
         code == 0
     }
@@ -345,7 +379,7 @@ impl Claude {
     pub fn connected(&self) -> bool {
         let (code, stdout, _stderr) = exec(vec!["auth", "status"]);
         code == 0 && stdout.contains("\"loggedIn\": true")
-    } */
+    }
 
     pub fn prompt(
         &self,
@@ -365,18 +399,30 @@ impl Claude {
             user_prompt,
         ]);
 
-        if code != 0 {
-            tracing::warn!(code, %stderr, "claude a terminé en erreur");
-            return Err(stderr.clone());
-        }
-
-        Ok(
-            serde_json::from_str::<ClaudeResponse>(&stdout).map_err(|error| {
-                let msg = "Lecture de la réponse de claude code.";
-                tracing::error!(cauded = %error,  msg);
+        if code == 0 {
+            Ok(
+                serde_json::from_str::<ClaudeResponse>(&stdout).map_err(|error| {
+                    let msg = "Lecture de la réponse de claude code.";
+                    tracing::error!(caused = %error, msg);
+                    msg
+                })?,
+            )
+        } else if code > 0 {
+            match serde_json::from_str::<ClaudeResponse>(&stdout).map_err(|error| {
+                let msg = "Lecture de l'erreur de claude code.";
+                tracing::error!(caused = %error, msg);
                 msg
-            })?,
-        )
+            }) {
+                Ok(error_response) => Err(error_response.result),
+                Err(error) => {
+                    tracing::warn!(caused = %error, code, %stdout, %stderr, "claude a terminé en erreur");
+                    Err(format!("{} {}", stdout, stderr).trim().to_string())
+                }
+            }
+        } else {
+            tracing::warn!(code, %stdout, %stderr, "claude a terminé en erreur");
+            Err(format!("{} {}", stdout, stderr).trim().to_string())
+        }
     }
 }
 
@@ -385,17 +431,19 @@ fn exec(args: Vec<&str>) -> (i32, String, String) {
 
     let process = cmd("claude", args.clone())
         .stdout_capture()
-        .stderr_capture();
+        .stderr_capture()
+        .unchecked();
     let result = process.run();
+
     match result {
         Ok(result) => (
-            result.status.code().unwrap_or(-1),
+            result.status.code().unwrap_or(0),
             String::from_utf8_lossy(&result.stdout).to_string(),
             String::from_utf8_lossy(&result.stderr).to_string(),
         ),
         Err(error) => {
-            let msg = "Execution d'une commande.";
-            tracing::warn!(cauded = %error, command = format!("claude {}", args.join(" ")),  msg);
+            let msg = "Exécution d'une commande.";
+            tracing::warn!(caused = %error, command = format!("claude {}", args.join(" ")), msg);
             (-1, "".to_string(), "".to_string())
         }
     }

@@ -8,6 +8,7 @@ use std::{
     collections::{HashMap, HashSet},
     path::Path,
 };
+use time::Timestamp;
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -17,6 +18,9 @@ use crate::{
 
 /// Nombre de fiches analysées en parallèle au maximum.
 const MAX_CONCURRENT_ANALYSES: usize = 2;
+
+/// Délai avant retry d'une fiche lors d'une erreur de quotas claude
+const CLAUDE_QUOTAS_EXCEEDED_RETRY_DELAY_MS: i64 = 20 * 60 * 1000; // 20 minutes
 
 #[derive(Default)]
 pub struct Paystubs {
@@ -42,9 +46,9 @@ fn paystub_icon(paystub: &Paystub) -> &'static str {
 fn paystub_status(paystub: &Paystub) -> (Color32, &'static str) {
     match paystub.state {
         PaystubState::Pending => (Color32::from_rgb(100, 100, 150), "En attente"),
-        PaystubState::Processing => (Color32::from_rgb(100, 100, 220), "En cours"),
+        PaystubState::Processing => (Color32::from_rgb(100, 100, 220), "Analyse"),
         PaystubState::ProcessingError { .. } => (Color32::from_rgb(220, 100, 100), "Erreur"),
-        PaystubState::Completed { .. } => (Color32::from_rgb(100, 220, 100), "Completed"),
+        PaystubState::Completed { .. } => (Color32::from_rgb(100, 220, 100), "Analysée"),
     }
 }
 
@@ -56,11 +60,20 @@ fn get_next_paystub_to_analyse(
         .paystubs
         .iter()
         .find(|(id, paystub)| {
-            !in_flight.contains(*id)
-                && matches!(
-                    paystub.state,
-                    PaystubState::Pending | PaystubState::ProcessingError { .. }
-                )
+            if in_flight.contains(*id) {
+                return false;
+            }
+            match &paystub.state {
+                PaystubState::Pending => true,
+                PaystubState::ProcessingError { error, .. }
+                    if error.contains("You've hit your session limit") =>
+                {
+                    Timestamp::now().as_milliseconds() - paystub.since
+                        > CLAUDE_QUOTAS_EXCEEDED_RETRY_DELAY_MS
+                }
+                PaystubState::ProcessingError { .. } => true,
+                _ => false,
+            }
         })
         .map(|(id, paystub)| (id.clone(), paystub.clone()))
 }
@@ -68,7 +81,7 @@ fn get_next_paystub_to_analyse(
 /// Repasse en `ProcessingError` les fiches bloquées en `Processing` depuis
 /// trop longtemps (voir `Paystub::is_stuck`) : sans ça, une fiche dont
 /// l'analyse a été interrompue (ex: l'application a crashé) resterait
-/// indéfiniment en "En cours" sans jamais être retentée. Renvoie `true` si
+/// indéfiniment en "Analyse" sans jamais être retentée. Renvoie `true` si
 /// au moins une fiche a été modifiée.
 fn reap_stuck_paystubs(store: &mut Store, in_flight: &mut HashSet<String>) -> bool {
     let mut changed = false;
@@ -231,7 +244,11 @@ impl Components for Paystubs {
         self.dispatch_next_paystubs(store);
     }
 
-    fn update(&mut self, _context: &Context, _events: &mut Events<Event>, store: &mut Store) {
+    fn update(&mut self, context: &Context, _events: &mut Events<Event>, store: &mut Store) {
+        // Force un repaint au minimum toutes les 20 minutes
+        // permet de laisser l'application ouverte tourner
+        context.request_repaint_after(std::time::Duration::from_mins(20));
+
         let mut changed = false;
         if let Some(analyse) = &self.analyse {
             while let Some((id, mut result)) = analyse.try_recv() {
@@ -294,7 +311,22 @@ impl Components for Paystubs {
                     .inner_margin(egui::Margin::symmetric(24, 16)),
             )
             .show(ui, |ui| {
-                ui.heading("Fiches de payes");
+                ui.horizontal(|ui| {
+                    ui.heading("Fiches de paie");
+
+                    egui::Frame::new()
+                        .fill(ui.visuals().widgets.inactive.bg_fill) // gris qui contraste avec le fond
+                        .corner_radius(egui::CornerRadius::same(8))
+                        .inner_margin(egui::Margin::symmetric(8, 3))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(format!("{}", store.paystubs.len(),))
+                                    .size(12.0)
+                                    .color(ui.visuals().weak_text_color()), // gris pour le texte
+                            );
+                        });
+                });
+
                 ui.add_space(20.0);
                 ui.add(
                     egui::TextEdit::singleline(&mut self.search)
@@ -313,20 +345,94 @@ impl Components for Paystubs {
                     .frame(egui::Frame::NONE)
                     .show(ui, |ui| {
                         ui.add_space(20.0);
-                        ui.label(format!(
-                            "{} fiche{} au total",
-                            store.paystubs.len(),
-                            if store.paystubs.len() > 1 { "s" } else { "" }
-                        ));
+
+                        let (mut processing, mut completed, mut error, mut pending) = (0, 0, 0, 0);
+
+                        for paystub in store.paystubs.values() {
+                            match paystub.state {
+                                PaystubState::Pending => pending += 1,
+                                PaystubState::Processing => processing += 1,
+                                PaystubState::ProcessingError { .. } => error += 1,
+                                PaystubState::Completed { .. } => completed += 1,
+                            }
+                        }
+
+                        ui.horizontal(|ui| {
+                            egui::Frame::new()
+                                .fill(ui.visuals().widgets.inactive.bg_fill) // gris qui contraste avec le fond
+                                .corner_radius(egui::CornerRadius::same(8))
+                                .inner_margin(egui::Margin::symmetric(8, 3))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "En attente{}: {}",
+                                            if pending > 1 { "s" } else { "" },
+                                            pending
+                                        ))
+                                        .size(11.0)
+                                        .color(ui.visuals().weak_text_color()), // gris pour le texte
+                                    );
+                                });
+
+                            egui::Frame::new()
+                                .fill(ui.visuals().widgets.inactive.bg_fill) // gris qui contraste avec le fond
+                                .corner_radius(egui::CornerRadius::same(8))
+                                .inner_margin(egui::Margin::symmetric(8, 3))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "Analyse{}: {}",
+                                            if processing > 1 { "s" } else { "" },
+                                            processing
+                                        ))
+                                        .size(11.0)
+                                        .color(ui.visuals().weak_text_color()), // gris pour le texte
+                                    );
+                                });
+
+                            egui::Frame::new()
+                                .fill(ui.visuals().widgets.inactive.bg_fill) // gris qui contraste avec le fond
+                                .corner_radius(egui::CornerRadius::same(8))
+                                .inner_margin(egui::Margin::symmetric(8, 3))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "Erreur{}: {}",
+                                            if error > 1 { "s" } else { "" },
+                                            error
+                                        ))
+                                        .size(11.0)
+                                        .color(ui.visuals().weak_text_color()), // gris pour le texte
+                                    );
+                                });
+
+                            egui::Frame::new()
+                                .fill(ui.visuals().widgets.inactive.bg_fill) // gris qui contraste avec le fond
+                                .corner_radius(egui::CornerRadius::same(8))
+                                .inner_margin(egui::Margin::symmetric(8, 3))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "Analysée{}: {}",
+                                            if completed > 1 { "s" } else { "" },
+                                            completed
+                                        ))
+                                        .size(11.0)
+                                        .color(ui.visuals().weak_text_color()), // gris pour le texte
+                                    );
+                                });
+                        });
                     });
                 let search = &self.search;
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        for (id, paystub) in store
+                        for (_id, paystub) in store
                             .paystubs
                             .iter()
-                            .filter(|(_, item)| item.file.contains(search))
+                            .filter(|(_, item)| {
+                                item.file.to_lowercase().contains(&search.to_lowercase())
+                            })
                             .collect::<Vec<(&String, &Paystub)>>()
                         {
                             let response = ui
@@ -363,16 +469,68 @@ impl Components for Paystubs {
 
                                                         let (color, status) =
                                                             paystub_status(paystub);
-                                                        ui.colored_label(
-                                                            color,
-                                                            egui::RichText::new(status).size(15.0),
-                                                        );
+                                                        ui.horizontal(|ui| {
+                                                            ui.colored_label(
+                                                                color,
+                                                                egui::RichText::new(status)
+                                                                    .size(15.0),
+                                                            );
+                                                            if let PaystubState::ProcessingError {
+                                                                retry,
+                                                                ..
+                                                            } = &paystub.state
+                                                            {
+                                                                egui::Frame::new()
+                                                                    .fill(
+                                                                        ui.visuals()
+                                                                            .widgets
+                                                                            .inactive
+                                                                            .bg_fill,
+                                                                    ) // gris qui contraste avec le fond
+                                                                    .corner_radius(
+                                                                        egui::CornerRadius::same(8),
+                                                                    )
+                                                                    .inner_margin(
+                                                                        egui::Margin::symmetric(
+                                                                            8, 3,
+                                                                        ),
+                                                                    )
+                                                                    .show(ui, |ui| {
+                                                                        ui.label(
+                                                                        egui::RichText::new(
+                                                                            format!(
+                                                                                "{}",
+                                                                                retry,
+                                                                            ),
+                                                                        )
+                                                                        .size(12.0)
+                                                                        .color(
+                                                                            ui.visuals()
+                                                                                .weak_text_color(),
+                                                                        ), // gris pour le texte
+                                                                    );
+                                                                    });
+                                                            }
+                                                        });
                                                     });
                                                 });
                                             });
                                     },
                                 )
                                 .response;
+
+                            if matches!(
+                                paystub.state,
+                                PaystubState::Pending | PaystubState::Processing,
+                            ) {
+                                continue;
+                            }
+
+                            if let PaystubState::ProcessingError { error, .. } = &paystub.state
+                                && error.is_empty()
+                            {
+                                continue;
+                            }
 
                             Popup::menu(&response)
                                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -414,16 +572,17 @@ impl Components for Paystubs {
                                                     });
                                                 }
                                             });
+                                    } else if let PaystubState::ProcessingError { error, .. } =
+                                        &paystub.state
+                                    {
+                                        egui::ScrollArea::vertical().auto_shrink(false).show(
+                                            ui,
+                                            |ui| {
+                                                ui.label(error);
+                                            },
+                                        );
                                     }
                                 });
-
-                            /*     response
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .context_menu(|ui| {
-                                if ui.button("Supprimer").clicked() {
-                                    info!(id, "Supprimer");
-                                }
-                            }); */
                         }
                     });
             });

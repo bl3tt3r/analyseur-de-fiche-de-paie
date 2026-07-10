@@ -22,7 +22,7 @@ impl Store {
         // Création du dossier DATA_DIR s'il n'existe pas.
         fs::create_dir_all(DATA_DIR).map_err(|error| {
             let msg = "Création du dossier datas.";
-            tracing::error!(caused = %error,  msg);
+            tracing::error!(caused = %error, msg);
             msg
         })?;
         // Création/Ouverture du fichier de store
@@ -33,22 +33,22 @@ impl Store {
             .open(format!("{}/{}", DATA_DIR, STORE_FILE))
             .map_err(|error| {
                 let msg = "Chargement du fichier de store.";
-                tracing::error!(caused = %error,  msg);
+                tracing::error!(caused = %error, msg);
                 msg
             })?;
-        // Lecture du contenue du fichier de store
+        // Lecture du contenu du fichier de store
         let mut content = Vec::new();
         store.read_to_end(&mut content).map_err(|error| {
             let msg = "Lecture du fichier de store.";
-            tracing::error!(caused = %error,  msg);
+            tracing::error!(caused = %error, msg);
             msg
         })?;
-        // Fichier fraichement créé (encore vide) : store par défaut.
+        // Fichier fraîchement créé (encore vide) : store par défaut.
         if content.is_empty() {
             return Ok(Store::default());
         }
 
-        // Décodage du contenue du fichier de store
+        // Décodage du contenu du fichier de store
         bitcode::decode::<Store>(&content).map_err(|error| {
             let msg = "Décodage du fichier de store.";
             tracing::error!(caused = %error, msg);

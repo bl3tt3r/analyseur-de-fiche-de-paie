@@ -1,11 +1,8 @@
-use std::{
-    collections::{BTreeMap, HashSet},
-    fmt::format,
-};
+use std::collections::{BTreeMap, HashSet};
 
 use eframe::egui::{self, Color32, Popup};
 use time::Date;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::{
     app::{paystubs::PaystubState, store::Store},
@@ -81,6 +78,7 @@ fn monthly_bars(store: &Store, key: &str) -> Vec<(i32, f64)> {
 
 pub struct Graph {
     filters: Vec<String>,
+    filters_search: String,
     /// Cache des clés uniques présentes dans les `datas` de toutes les
     /// fiches `Completed` du store, triées alphabétiquement.
     datas_keys_cache: Vec<String>,
@@ -98,6 +96,7 @@ impl Default for Graph {
             // paie, contrairement aux entrées de `datas` qui varient d'un
             // employeur à l'autre.
             filters: vec![NET_SALARY_KEY.to_string()],
+            filters_search: "".to_string(),
             datas_keys_cache: Vec::new(),
             cached_completed_count: 0,
         }
@@ -199,10 +198,32 @@ impl Components for Graph {
                     ui.set_width(300.0);
                     let max_height = (ui.ctx().viewport_rect().height() * 0.6).min(300.0);
                     ui.set_max_height(max_height);
+
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.filters_search)
+                            .prefix(
+                                egui::RichText::new(egui_phosphor::regular::MAGNIFYING_GLASS)
+                                    .size(13.0),
+                            )
+                            .hint_text(egui::RichText::new("Rechercher..").size(13.0))
+                            .font(egui::FontId::proportional(13.0))
+                            .margin(egui::Margin::symmetric(10, 8)),
+                    );
+
+                    ui.add_space(5.0);
+
                     egui::ScrollArea::vertical()
                         .max_height(max_height)
                         .show(ui, |ui| {
-                            for key in &self.datas_keys_cache {
+                            for key in self
+                                .datas_keys_cache
+                                .iter()
+                                .filter(|key| {
+                                    key.to_lowercase()
+                                        .contains(&self.filters_search.to_lowercase())
+                                })
+                                .collect::<Vec<&String>>()
+                            {
                                 let mut checked = self.filters.contains(key);
                                 if ui.checkbox(&mut checked, key).clicked() {
                                     if checked {

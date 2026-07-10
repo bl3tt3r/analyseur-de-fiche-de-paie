@@ -41,13 +41,13 @@ impl Components for Settings {
         if self.open {
             let modal = Modal::new("Settings".into()).show(ui.ctx(), |ui| {
                 ui.set_width(250.0);
-                ui.heading("Parametres");
+                ui.heading("Paramètres");
 
                 ui.separator();
 
                 egui::Sides::new().show(
                     ui,
-                    |ui| ui.label("Theme : "),
+                    |ui| ui.label("Thème : "),
                     |ui| {
                         ui.horizontal(|ui| {
                             if ui
@@ -87,7 +87,7 @@ impl Components for Settings {
                     ui,
                     |_ui| {},
                     |ui| {
-                        if ui.button("close").clicked() {
+                        if ui.button("Fermer").clicked() {
                             ui.close();
                         }
                     },

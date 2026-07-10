@@ -27,7 +27,7 @@ impl Components for Menu {
                 tracing::error!(
                     caused = %error,
                     path = %paystubs_dir.display(),
-                    "Création du dossier des fiches de paye."
+                    "Création du dossier des fiches de paie."
                 );
                 return;
             }
@@ -44,7 +44,7 @@ impl Components for Menu {
                 if destination.exists() {
                     tracing::warn!(
                         path = %destination.display(),
-                        "Une fiche de paye porte déjà ce nom dans le dossier de données, fiche ignorée."
+                        "Une fiche de paie porte déjà ce nom dans le dossier de données, fiche ignorée."
                     );
                     continue;
                 }
@@ -53,7 +53,7 @@ impl Components for Menu {
                     tracing::error!(
                         caused = %error,
                         path = %path.display(),
-                        "Copie du fichier de fiche de paye."
+                        "Copie du fichier de fiche de paie."
                     );
                     continue;
                 }
@@ -88,9 +88,7 @@ impl Components for Menu {
                             ui.label(
                                 egui::RichText::new(egui_phosphor::regular::FILE_PDF).size(32.0),
                             );
-                            ui.label(
-                                egui::RichText::new("Analyser vos fiches de payes").size(25.0),
-                            );
+                            ui.label(egui::RichText::new("Analyser vos fiches de paie").size(25.0));
                         },
                         |ui| {
                             if ui
@@ -107,7 +105,7 @@ impl Components for Menu {
                             {
                                 events.push(Event::ToggleSettingsWindow { opened: true });
                             }
-                            // Bouton pour importer de nouvelles fiche de paie
+                            // Bouton pour importer de nouvelles fiches de paie
                             if ui
                                 .scope(|ui| {
                                     ui.spacing_mut().button_padding = egui::vec2(16.0, 10.0);

@@ -23,7 +23,7 @@ pub struct App {
 
 impl App {
     pub fn load() -> App {
-        // Demarrage du logger
+        // Démarrage du logger
         tracing_subscriber::fmt()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::builder()
@@ -52,7 +52,7 @@ impl App {
     }
 
     pub fn name(&self) -> &'static str {
-        "Fiche de paye"
+        "Fiche de paie"
     }
 
     pub fn options(&self) -> eframe::NativeOptions {

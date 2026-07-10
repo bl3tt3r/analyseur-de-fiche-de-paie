@@ -1,0 +1,83 @@
+name: Rust CI
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - name: Install nightly toolchain (for udeps)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov,cargo-hack,cargo-udeps
+
+      # ======================
+      # Format check
+      # ======================
+      - name: Check formatting
+        run: cargo +stable fmt --all -- --check
+
+      # ======================
+      # Lint (Clippy)
+      # ======================
+      - name: Run clippy
+        run: cargo +stable clippy --all-targets --all-features -- -D warnings
+
+      # ======================
+      # Build
+      # ======================
+      - name: Build
+        run: cargo +stable build --verbose --all-features
+
+      # ======================
+      # Tests
+      # ======================
+      - name: Run tests
+        run: cargo +stable test --verbose --all-featuresd
+
+      # ======================
+      # Coverage (llvm-cov)
+      # ======================
+      - name: Run coverage
+        run: cargo +stable llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: lcov.info
+          retention-days: 30
+
+      # ======================
+      # Check unused dependencies
+      # ======================
+      - name: Check unused dependencies
+        run: cargo +nightly udeps
+
+      # ======================
+      # Check feature combinations
+      # ======================
+      - name: Check feature combinations
+        run: cargo +stable hack check --each-feature --all
