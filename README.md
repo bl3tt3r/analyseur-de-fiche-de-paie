@@ -3,8 +3,15 @@
 <p align="center">
   <img alt="Rust" src="https://img.shields.io/badge/-Rust-000000?logo=rust&logoColor=white">
   <img alt="Claude Code" src="https://img.shields.io/badge/-Claude%20Code-D97757?logo=claude&logoColor=white">
-  <a href="https://github.com/bl3tt3r/analyseur-de-fiche-de-paie/actions/workflows/rust.yml"><img alt="Rust CI" src="https://github.com/bl3tt3r/analyseur-de-fiche-de-paie/actions/workflows/rust.yml/badge.svg"></a>
+    <a href="https://github.com/bl3tt3r/analyseur-de-fiche-de-paie/actions/workflows/rust.yml"><img alt="Rust CI" src="https://github.com/bl3tt3r/analyseur-de-fiche-de-paie/actions/workflows/rust.yml/badge.svg"></a>
   <a href="https://github.com/bl3tt3r/analyseur-de-fiche-de-paie/actions/workflows/release.yml"><img alt="Release" src="https://github.com/bl3tt3r/analyseur-de-fiche-de-paie/actions/workflows/release.yml/badge.svg"></a>
+  <br>
+  <img alt="eframe" src="https://img.shields.io/badge/-eframe-E28743">
+  <img alt="egui" src="https://img.shields.io/badge/-egui-E28743">
+  <img alt="tokio" src="https://img.shields.io/badge/-tokio-463B78">
+  <img alt="serde" src="https://img.shields.io/badge/-serde-000000">
+  <img alt="bitcode" src="https://img.shields.io/badge/-bitcode-4B5563">
+
 </p>
 
 **Analyseur de fiche de paie** est une application de bureau qui automatise le suivi de vos fiches de paie grâce à l'IA, notamment [Claude Code](https://docs.anthropic.com/en/docs/claude-code) : elle analyse et extrait les données de chaque PDF (salaire net, cotisations, primes...) et permet de les comparer d'un mois sur l'autre.
@@ -13,9 +20,9 @@ Initialement développée pour mon usage personnel, l'application se veut volont
 
 ## Fonctionnement
 
-<img alt="Claude Code" src="https://img.shields.io/badge/Propuls%C3%A9%20par-Claude%20Code-D97757?logo=claude&logoColor=white">
 
-L'application s'appuie sur [Claude Code](https://docs.anthropic.com/en/docs/claude-code) pour lire et analyser chaque fiche de paie (PDF) : le fichier lui est transmis avec des consignes précises, et le résultat structuré (date de paiement, salaire net, cotisations, primes, etc.) est renvoyé et stocké localement.
+
+L'application s'appuie sur [<img alt="Claude Code" src="https://img.shields.io/badge/Claude%20Code-D97757?logo=claude&logoColor=white">](https://docs.anthropic.com/en/docs/claude-code) pour lire et analyser chaque fiche de paie (PDF) : le fichier lui est transmis avec des consignes précises, et le résultat structuré (date de paiement, salaire net, cotisations, primes, etc.) est renvoyé et stocké localement.
 
 Claude Code doit donc être installé et connecté sur la machine pour que l'analyse fonctionne — l'application vérifie cette condition au démarrage.
 
